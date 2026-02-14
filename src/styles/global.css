@@ -1,0 +1,25 @@
+/* 隐藏全局滚动条*/
+
+/* Chrome/Safari/Edge 等webkit内核浏览器 */
+::-webkit-scrollbar {
+  display: none !important; /* 隐藏滚动条 */
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Firefox */
+html {
+  scrollbar-width: none !important; /* 隐藏滚动条 */
+}
+
+/* IE/Edge 旧版本 */
+body {
+  -ms-overflow-style: none !important; /* 隐藏滚动条 */
+}
+
+html, body, #app {
+  width: 100vw !important;
+  height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
