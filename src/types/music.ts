@@ -25,4 +25,5 @@ export interface Track {
   artist: string;
   cover: string;
   isVip?: boolean;
+  filePath: string;
 }

@@ -9,6 +9,12 @@ pub mod frontend{
 }
 pub use frontend::*;
 
+pub mod domain {
+    pub mod player;
+}
+pub use domain::*;
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logger::init_logger("info")
@@ -22,7 +28,7 @@ pub fn run() {
             play_bar::actions::push_play,
             play_bar::actions::push_next,
             play_bar::actions::push_prev,
-            play_bar::actions::push_status,
+            play_bar::actions::push_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
