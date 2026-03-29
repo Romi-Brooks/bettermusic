@@ -21,7 +21,7 @@
     <div class="player-controls">
 
     <!-- 播放方式 -->
-    <button class="control-btn" @click="changePlayMode">
+    <button class="control-btn" @click="toggleStatus">
     <!-- 顺序 -->
     <svg v-if="playMode === 0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="svg-icon">
       <path d="M4.70710678,18 L6.85355339,20.1464466 C7.04881554,20.3417088 7.04881554,20.6582912 6.85355339,20.8535534 C6.65829124,21.0488155 6.34170876,21.0488155 6.14644661,20.8535534 L3.14644661,17.8535534 C2.95118446,17.6582912 2.95118446,17.3417088 3.14644661,17.1464466 L6.14644661,14.1464466 C6.34170876,13.9511845 6.65829124,13.9511845 6.85355339,14.1464466 C7.04881554,14.3417088 7.04881554,14.6582912 6.85355339,14.8535534 L4.70710678,17 L18.5,17 C19.3284271,17 20,16.3284271 20,15.5 L20,12.5 C20,12.2238576 20.2238576,12 20.5,12 C20.7761424,12 21,12.2238576 21,12.5 L21,15.5 C21,16.8807119 19.8807119,18 18.5,18 L4.70710678,18 Z M19.2928932,7 L17.1464466,4.85355339 C16.9511845,4.65829124 16.9511845,4.34170876 17.1464466,4.14644661 C17.3417088,3.95118446 17.6582912,3.95118446 17.8535534,4.14644661 L20.8535534,7.14644661 C21.0488155,7.34170876 21.0488155,7.65829124 20.8535534,7.85355339 L17.8535534,10.8535534 C17.6582912,11.0488155 17.3417088,11.0488155 17.1464466,10.8535534 C16.9511845,10.6582912 16.9511845,10.3417088 17.1464466,10.1464466 L19.2928932,8 L5.5,8 C4.67157288,8 4,8.67157288 4,9.5 L4,12.5 C4,12.7761424 3.77614237,13 3.5,13 C3.22385763,13 3,12.7761424 3,12.5 L3,9.5 C3,8.11928813 4.11928813,7 5.5,7 L19.2928932,7 Z"/>
@@ -54,7 +54,7 @@
 
       <!-- 上一曲/下一曲/播放/暂停按钮 -->
         <!-- 上一曲 -->
-        <button class="control-btn">
+        <button class="control-btn" @click="playPrev">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="19 20 9 12 19 4 19 20"/>
@@ -63,7 +63,7 @@
         </button>
 
         <!-- 播放/暂停切换 -->
-        <button class="play-btn" @click="isPlaying = !isPlaying">
+        <button class="play-btn" @click="pushPlay(currentTrack.id)">
           <template v-if="!isPlaying">
             <!-- 播放 -->
             <svg
@@ -91,7 +91,7 @@
         </button>
 
         <!-- 下一曲 -->
-        <button class="control-btn">
+        <button class="control-btn" @click="playNext">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polygon points="5 4 15 12 5 20 5 4"/>
@@ -141,23 +141,19 @@
 </template>
 
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import { ref } from "vue";
 import type { Track } from "@/types/music";
 
 const progress = ref(30); // 0 ~ 100
 
-// 播放模式：0-顺序 1-单曲循环 2-随机
+// PlayModes: 0 - 顺序播放，1 - 单曲循环，2 - 随机播放
 const playMode = ref(0);
 
-// 切换播放模式
-const changePlayMode = () => {
-  playMode.value = (playMode.value + 1) % 3;
-};
-
-// 播放状态（控制播放/暂停切换）
+// PlayingState
 const isPlaying = ref(false);
 
-// 当前播放歌曲
+// Current Playing Track
 const currentTrack = ref<Track>({
   id: "t1",
   title: "24K Magic",
@@ -165,6 +161,43 @@ const currentTrack = ref<Track>({
   cover: "https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
   isVip: true,
 });
+
+// 1. 播放/暂停 → 调用 Rust push_status
+const pushPlay = async (songId?: string) => {
+  try {
+    // 如果你需要传歌曲ID，就传参数
+    await invoke('push_play', { songId })
+    isPlaying.value = true
+    console.log('已播放歌曲')
+  } catch (err) {
+    console.error('播放失败:', err)
+  }
+}
+
+// 2. 上一曲
+const playPrev = async () => {
+  try {
+    await invoke('push_prev')
+    console.log('已触发上一曲')
+  } catch (err) {
+    console.error('上一曲失败:', err)
+  }
+}
+
+// 3. 下一曲
+const playNext = async () => {
+  try {
+    await invoke('push_next')
+    console.log('已触发下一曲')
+  } catch (err) {
+    console.error('下一曲失败:', err)
+  }
+}
+
+// 切换播放模式（你原有功能）
+const toggleStatus = async () => {
+  
+}
 </script>
 
 <style scoped>

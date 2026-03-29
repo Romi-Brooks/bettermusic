@@ -1,11 +1,11 @@
-use super::parser::parse_log_level;
-use super::config::build_log_config;
+use crate::infra::logger::parser;
+use crate::infra::logger::config;
 use simplelog::{TermLogger, TerminalMode, ColorChoice};
 
 // 对外暴露的初始化函数
 pub fn init_logger(log_level: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let level = parse_log_level(log_level)?;
-    let config = build_log_config();
+    let level = parser::parse_log_level(log_level)?;
+    let config = config::build_log_config();
 
     // init TermLogger
     TermLogger::init(

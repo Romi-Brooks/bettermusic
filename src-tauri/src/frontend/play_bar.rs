@@ -1,7 +1,5 @@
-pub mod greet;
-pub use greet::push_greet;
-
-pub use greet::push_play;
-pub use greet::push_next;
-pub use greet::push_prev;
-pub use greet::push_status;
+pub mod actions;
+pub use actions::push_play;
+pub use actions::push_next;
+pub use actions::push_prev;
+pub use actions::push_status;
