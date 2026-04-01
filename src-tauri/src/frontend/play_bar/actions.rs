@@ -1,34 +1,29 @@
 use tauri::command;
+
 use crate::domain::player::PLAYER;
-use crate::{app_info, app_error, app_warning};
+use crate::{app_info};
 
 #[command]
 pub fn push_play(file_path: String) -> Result<(), String> {
-    let mut player = PLAYER.lock().unwrap();
-    player.play(&file_path)?;
-    app_info!("播放: {}", file_path);
+    let mut _player = PLAYER.lock().unwrap();
+    _player.play(&file_path)?;
     Ok(())
 }
 
 #[command]
 pub fn toggle_play() {
-    let mut player = PLAYER.lock().unwrap();
-    let status = if player.is_playing() {
-        // 当前正在播放，执行暂停
-        player.pause();
-        "暂停"
+    let mut _player = PLAYER.lock().unwrap();
+    if _player.is_playing() {
+        _player.pause();
     } else {
-        // 当前已暂停，执行恢复播放
-        player.resume();
-        "恢复播放"
+        _player.resume();
     };
-    app_info!("{}", status);
 }
 
 #[command]
 pub fn get_play_status() -> bool {
-    let player = PLAYER.lock().unwrap();
-    player.is_playing()
+    let _player = PLAYER.lock().unwrap();
+    _player.is_playing()
 }
 
 #[command]
@@ -43,13 +38,36 @@ pub fn push_next() {
 
 #[command]
 pub fn push_mode(mode: u8) {
-    let mut player = PLAYER.lock().unwrap();
-    app_info!("切换播放模式: {}", mode);
+    let mut _player = PLAYER.lock().unwrap();
+    app_info!("switch the play mode to: {}", mode);
+}
+
+#[command]
+pub fn is_playing() -> bool {
+    let _player = PLAYER.lock().unwrap();
+    _player.is_playing()
 }
 
 #[command]
 pub fn push_stop() {
-    let mut player = PLAYER.lock().unwrap() ;
-    player.stop();
-    app_info!("停止播放");
+    let mut _player = PLAYER.lock().unwrap();
+    _player.stop();
+}
+
+#[command]
+pub fn seek_to(time: f32) {
+    let mut _player = PLAYER.lock().unwrap();
+    _player.seek_to(time);
+}
+
+#[command]
+pub fn get_duration() -> f32 {
+    let mut _player = PLAYER.lock().unwrap();
+    _player.get_duration()
+}
+
+#[command]
+pub fn get_pos() -> u64 {
+    let mut _player = PLAYER.lock().unwrap();
+    _player.get_current_second()
 }

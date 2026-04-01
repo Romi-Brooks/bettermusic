@@ -3,6 +3,8 @@
     <div class="progress-bg">
       <div class="progress-current" :style="{ width: progress + '%' }"></div>
     </div>
+    <!-- clickable progress bar -->
+    <div class="progress-click" @click="handleProgressClick"></div>
   </div>
 
   <div class="player-bar">
@@ -11,7 +13,6 @@
       <div class="track-info">
         <span class="title">{{ currentTrack.title }}</span>
         <span class="artist">{{ currentTrack.artist }}</span>
-        <span v-if="currentTrack.isVip" class="vip-tag">VIP</span>
       </div>
       <div class="track-actions">
         <button class="action-btn">❤️</button>
@@ -63,7 +64,7 @@
         </button>
 
         <!-- 播放/暂停切换 -->
-        <button class="play-btn" @click="pushPlay(currentTrack)">
+        <button class="play-btn" @click="togglePlayPause">
           <template v-if="!isPlaying">
             <!-- 播放 -->
             <svg
@@ -142,110 +143,178 @@
 
 <script setup lang="ts">
   import { invoke } from '@tauri-apps/api/core'
-  import { ref } from "vue";
+  import { ref, onMounted, onUnmounted } from "vue";
   import type { Track } from "@/types/music";
-
-  const progress = ref(0); // 0 ~ 100 播放进度，后续可扩展同步后端进度
-
-  // PlayModes: 0 - 顺序播放，1 - 单曲循环，2 - 随机播放
+  const progress = ref(0);
   const playMode = ref(0);
-
-  // PlayingState
   const isPlaying = ref(false);
+  let progressTimer: number | null = null; // 进度定时器
 
-  // Current Playing Track
   const currentTrack = ref<Track>({
     id: "t1",
     title: "素颜",
     artist: "许嵩,何曼婷",
     cover: "https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
-    isVip: true,
-    // for test
-    filePath: "D:/Project/Repo/BetterMusic/BetterMusic-Tauri/src-tauri/target/debug/许嵩,何曼婷 - 素颜.mp3",
+    time: 0, // total second
+    filePath: "E:/Media/Music/本兮/蓝色的海-本兮.mp3",
+    hasPlaying: false,
   });
 
-  // 播放指定歌曲
+  const getPos = async () => {
+    try {
+      // get the second now
+      const currentSecond = await invoke<number>('get_pos');
+      
+      // total second
+      const totalSecond = currentTrack.value.time || 1;
+      if (totalSecond <= 0) return;
+
+      // get percent
+      const percent = (currentSecond / totalSecond) * 100;
+      progress.value = Math.min(100, Math.max(0, percent));
+    } catch (err) {
+      console.error('get the progress error:', err);
+    }
+  };
+
+  // update the progress with 0.5s
+  const startProgressSync = () => {
+    if (progressTimer) clearInterval(progressTimer);
+    progressTimer = window.setInterval(() => {
+      if (isPlaying.value) {
+        getPos();
+      }
+    }, 500);
+  };
+
+  // stop the progress update
+  const stopProgressSync = () => {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  };
+
+  // play a song
   const pushPlay = async (track?: Track) => {
     try {
-      // 如果传入了指定歌曲，就更新当前播放的歌曲
       const targetTrack = track || currentTrack.value;
       if (!targetTrack.filePath) {
-        console.error('歌曲没有本地文件路径，无法播放');
+        console.error('passed an error path');
         return;
       }
 
-      await invoke('push_play', { filePath: targetTrack.filePath })
-      
-      // 更新前端状态
-      currentTrack.value = targetTrack;
-      isPlaying.value = true;
-      console.log('已播放歌曲:', targetTrack.title);
-    } catch (err) {
-      console.error('播放失败:', err)
-    }
-  }
+      await invoke('push_play', { filePath: targetTrack.filePath });
 
-  // 切换播放/暂停
+      currentTrack.value.time = await invoke('get_duration');
+      currentTrack.value = targetTrack;
+      currentTrack.value.hasPlaying = true;
+    
+      isPlaying.value = true;
+
+      progress.value = 0; // reset the progress
+      startProgressSync(); // start the progress update
+
+      
+      console.log('playing:', targetTrack.title);
+    } catch (err) {
+      console.error('error when playing:', err);
+    }
+  };
+
+  // resume/pause
   const togglePlayPause = async () => {
-    // 如果还没加载过歌曲，先触发播放
-    if (!currentTrack.value.filePath || !isPlaying.value && currentTrack.value.id === "t1") {
+    if (!currentTrack.value.filePath || !currentTrack.value.hasPlaying) {
       return pushPlay();
     }
 
     try {
-      // 调用后端的切换命令
-      await invoke('toggle_play')
-      // 同步更新前端状态
+      await invoke('toggle_play');
       isPlaying.value = !isPlaying.value;
+      
+      // 暂停时也继续同步进度，播放时继续刷新
+      if (isPlaying.value) startProgressSync();
       console.log('已切换播放状态:', isPlaying.value ? '播放中' : '已暂停');
     } catch (err) {
-      console.error('切换播放状态失败:', err)
+      console.error('切换播放状态失败:', err);
     }
-  }
+  };
 
-  // 上一曲
+  //  prev song
   const playPrev = async () => {
     try {
-      await invoke('push_prev')
-      console.log('已触发上一曲')
+      await invoke('push_prev');
+      progress.value = 0;
+      console.log('previous track triggered');
     } catch (err) {
-      console.error('上一曲失败:', err)
+      console.error('error when play the prev track:', err);
     }
-  }
+  };
 
-  // 4. 下一曲
+  // next song
   const playNext = async () => {
     try {
-      await invoke('push_next')
-      console.log('已触发下一曲')
+      await invoke('push_next');
+      progress.value = 0;
+      console.log('next track triggered');
     } catch (err) {
-      console.error('下一曲失败:', err)
+      console.error('error when play the next track:', err);
     }
-  }
+  };
 
-  // 5. 切换播放模式
+  // set the play mode
   const togglePlayMode = async () => {
     try {
-      // 循环切换模式：0顺序→1单曲→2随机→0顺序
       playMode.value = (playMode.value + 1) % 3;
-      await invoke('push_mode', { mode: playMode.value })
-      console.log('已切换播放模式:', playMode.value)
+      await invoke('push_mode', { mode: playMode.value });
+      console.log('set playmode to:', playMode.value);
     } catch (err) {
-      console.error('切换播放模式失败:', err)
+      console.error('error to set playmode:', err);
     }
-  }
+  };
 
-  // 6. 停止播放
+  // stop the play
   const stopPlay = async () => {
     try {
-      await invoke('push_stop')
+      await invoke('push_stop');
       isPlaying.value = false;
       progress.value = 0;
-      console.log('已停止播放')
+      stopProgressSync();
+      console.log('stopped');
     } catch (err) {
-      console.error('停止播放失败:', err)
+      console.error('error when stop:', err);
     }
-  }
+  };
+
+  // seek by click the progress bar
+  const handleProgressClick = async (e: MouseEvent) => {
+    const bar = e.currentTarget as HTMLElement;
+    const rect = bar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = clickX / rect.width;
+    const targetTime = percent * (currentTrack.value.time || 0);
+    
+    await seekTo(targetTime);
+    progress.value = percent * 100;
+  };
+
+  const seekTo = async (time: number) => {
+    try {
+      await invoke('seek_to', { time });
+      console.info('seek to:', time, 's');
+    } catch (err) {
+      console.error('error when seek:', err);
+    }
+  };
+
+  // life time
+  onMounted(() => {
+    startProgressSync();
+  });
+
+  onUnmounted(() => {
+    stopProgressSync();
+  });
 </script>
 
 <style scoped>
@@ -256,6 +325,16 @@
   bottom: 72px;
   height: 4px;
   z-index: 1000;
+  cursor: pointer;
+}
+
+/* 点击区域 */
+.progress-click {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  width: 100%;
+  height: 16px;
 }
 
 .progress-bg {
@@ -264,6 +343,7 @@
   background: #f1f1f1;
 }
 
+/* 已播放进度：红色 */
 .progress-current {
   height: 100%;
   background: linear-gradient(90deg, #ff5a5f, #d43c33);
@@ -390,15 +470,12 @@
 }
 
 .play-icon {
-  /* 对于播放按钮的几何重心，向右偏移1px，更美观一些 */
   transform: translateX(1px);
 }
 
 .pause-icon {
-  /* 对于播放按钮的几何重心，向左偏移1px，更美观一些 */
   transform: translateX(-1px);
 }
-
 
 /* icon 尺寸 */
 .svg-icon {

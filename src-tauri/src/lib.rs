@@ -1,6 +1,5 @@
 pub mod infra {
     pub mod logger;
-
 }
 pub use infra::*;
 
@@ -14,7 +13,6 @@ pub mod domain {
 }
 pub use domain::*;
 
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logger::init_logger("info")
@@ -25,10 +23,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            // play bar
             play_bar::actions::push_play,
             play_bar::actions::push_next,
             play_bar::actions::push_prev,
             play_bar::actions::push_mode,
+            play_bar::actions::toggle_play,
+            play_bar::actions::get_duration,
+            play_bar::actions::get_pos,
+            play_bar::actions::seek_to,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

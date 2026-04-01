@@ -1,7 +1,3 @@
-// logger
-mod api;
-mod parser;
-mod config;
+pub mod logger;
 
-// public api
-pub use self::api::{init_logger};
+pub use logger::*;
