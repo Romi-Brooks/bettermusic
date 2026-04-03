@@ -27,13 +27,12 @@ defineProps({
   color: { type: String, default: "#999" }
 });
 
-// 定义悬浮状态
 const isHover = ref(false);
 </script>
 
 <style scoped>
 .search-icon {
-  cursor: pointer; /* 鼠标移上去显示手型 */
-  transition: stroke-width 0.2s ease; /* 加粗动画过渡 */
+  cursor: pointer;
+  transition: stroke-width 0.2s ease; /* 加粗动画 */
 }
 </style>

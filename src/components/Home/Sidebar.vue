@@ -30,7 +30,12 @@
       <div class="sidebar__section">
         <h4>我的</h4>
         <ul>
-          <li v-for="item in myItems" :key="item.id">
+          <li 
+            v-for="item in myItems" 
+            :key="item.id"
+            :class="{ active: route.path === item.route }"
+            @click="handleMyItemClick(item)"
+          >
             <span class="icon">{{ item.icon }}</span>
             <span class="label">{{ item.label }}</span>
           </li>
@@ -57,7 +62,10 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
+const route = useRoute();
+const router = useRouter();
 const activeNav = ref("recommend");
 
 const navItems = [
@@ -69,10 +77,17 @@ const navItems = [
 ];
 
 const myItems = [
-  { id: "like", icon: "❤️", label: "我喜欢的音乐" },
-  { id: "recent", icon: "⏯️", label: "最近播放" },
-  { id: "podcast", icon: "🎙️", label: "我的播客" },
+  { id: "like", icon: "❤️", label: "我的音乐", route: "/my-songs" },
+  { id: "recent", icon: "⏯️", label: "最近播放", route: "/recent" },
+  { id: "podcast", icon: "🎙️", label: "我的播客", route: "/podcast" },
 ];
+
+// 处理"我的"菜单点击
+const handleMyItemClick = (item: typeof myItems[0]) => {
+  if (item.route) {
+    router.push(item.route);
+  }
+};
 
 // 模拟多歌单（测试滚动）
 const createdPlaylists = [

@@ -9,10 +9,14 @@
 
   <div class="player-bar">
     <div class="player-track">
-      <img :src="currentTrack.cover" alt="" class="track-cover" />
+      <img :src="getCoverUrl(currentTrack.cover)" alt="" class="track-cover" />
       <div class="track-info">
-        <span class="title">{{ currentTrack.title }}</span>
-        <span class="artist">{{ currentTrack.artist }}</span>
+        <div class="title-wrapper">
+          <span class="title" :class="{ 'scrolling': isTitleScrolling }">{{ currentTrack.name }}</span>
+        </div>
+        <div class="artist-wrapper">
+          <span class="artist" :class="{ 'scrolling': isArtistScrolling }">{{ currentTrack.artist }}</span>
+        </div>
       </div>
       <div class="track-actions">
         <button class="action-btn">❤️</button>
@@ -102,7 +106,7 @@
 
       <!-- 右侧控件 -->
       <!-- 歌单 -->
-      <button class="control-btn">
+      <button class="control-btn" @click="stopPlay">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="4" y1="6" x2="20" y2="6"/>
@@ -143,126 +147,218 @@
 
 <script setup lang="ts">
   import { invoke } from '@tauri-apps/api/core'
-  import { ref, onMounted, onUnmounted } from "vue";
-  import type { Track } from "@/types/music";
+  import { listen } from '@tauri-apps/api/event'
+  import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
+  import type { Song, PlayerState } from "@/types/music";
+  import { getCoverUrl } from "@/utils/asset";
+
   const progress = ref(0);
   const playMode = ref(0);
   const isPlaying = ref(false);
-  let progressTimer: number | null = null; // 进度定时器
+  const currentSec = ref(0);
+  const isTitleScrolling = ref(false);
+  const isArtistScrolling = ref(false);
+  
+  let progressTimer: number | null = null;
+  let stateSyncTimer: number | null = null;
+  let unlistenStateChange: (() => void) | null = null;
+  const SYNC_INTERVAL = 15000;
+  const TITLE_MAX_WIDTH = 150;
+  const ARTIST_MAX_WIDTH = 150;
 
-  const currentTrack = ref<Track>({
-    id: "t1",
-    title: "素颜",
-    artist: "许嵩,何曼婷",
-    cover: "https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
-    time: 0, // total second
-    filePath: "E:/Media/Music/本兮/蓝色的海-本兮.mp3",
-    hasPlaying: false,
+  const currentTrack = ref<Song>({
+    id: "",
+    name: "未在播放",
+    artist: "-",
+    album: "",
+    cover: "",
+    duration: "00:00",
+    durationSec: 0,
+    filePath: "",
   });
 
-  const getPos = async () => {
-    try {
-      // get the second now
-      const currentSecond = await invoke<number>('get_pos');
+  const checkTextOverflow = () => {
+    nextTick(() => {
+      const titleEl = document.querySelector('.title-wrapper');
+      const artistEl = document.querySelector('.artist-wrapper');
       
-      // total second
-      const totalSecond = currentTrack.value.time || 1;
-      if (totalSecond <= 0) return;
+      if (titleEl) {
+        const span = titleEl.querySelector('span');
+        if (span) {
+          isTitleScrolling.value = span.scrollWidth > TITLE_MAX_WIDTH;
+        }
+      }
+      
+      if (artistEl) {
+        const span = artistEl.querySelector('span');
+        if (span) {
+          isArtistScrolling.value = span.scrollWidth > ARTIST_MAX_WIDTH;
+        }
+      }
+    });
+  };
 
-      // get percent
-      const percent = (currentSecond / totalSecond) * 100;
-      progress.value = Math.min(100, Math.max(0, percent));
-    } catch (err) {
-      console.error('get the progress error:', err);
+  watch(() => currentTrack.value.name, checkTextOverflow);
+  watch(() => currentTrack.value.artist, checkTextOverflow);
+
+  const updateStateFromData = (state: PlayerState) => {
+    isPlaying.value = state.isPlaying;
+    playMode.value = state.playMode;
+    
+    if (state.currentSong) {
+      const songChanged = state.currentSong.id !== currentTrack.value.id;
+      currentTrack.value = state.currentSong;
+      
+      if (songChanged) {
+        currentSec.value = 0;
+        progress.value = 0;
+      }
+    }
+    
+    if (state.durationSec > 0) {
+      currentSec.value = state.currentSec;
+      progress.value = (state.currentSec / state.durationSec) * 100;
+    }
+    
+    if (isPlaying.value) {
+      resumeProgressTimer();
+    } else {
+      pauseProgressTimer();
     }
   };
 
-  // update the progress with 0.5s
-  const startProgressSync = () => {
-    if (progressTimer) clearInterval(progressTimer);
-    progressTimer = window.setInterval(() => {
-      if (isPlaying.value) {
-        getPos();
-      }
-    }, 500);
+  const syncPlayerState = async () => {
+    try {
+      const state = await invoke<PlayerState>('get_player_state');
+      updateStateFromData(state);
+    } catch (err) {
+      console.error('同步播放器状态失败:', err);
+    }
   };
 
-  // stop the progress update
-  const stopProgressSync = () => {
+  const startProgressTimer = () => {
+    if (progressTimer) clearInterval(progressTimer);
+    progressTimer = window.setInterval(() => {
+      if (isPlaying.value && currentTrack.value.durationSec > 0) {
+        currentSec.value += 1;
+        if (currentSec.value > currentTrack.value.durationSec) {
+          currentSec.value = currentTrack.value.durationSec;
+        }
+        progress.value = (currentSec.value / currentTrack.value.durationSec) * 100;
+      }
+    }, 1000);
+  };
+
+  const stopProgressTimer = () => {
     if (progressTimer) {
       clearInterval(progressTimer);
       progressTimer = null;
     }
   };
 
-  // play a song
-  const pushPlay = async (track?: Track) => {
+  const startStateSync = () => {
+    if (stateSyncTimer) clearInterval(stateSyncTimer);
+    stateSyncTimer = window.setInterval(() => {
+      syncPlayerState();
+    }, SYNC_INTERVAL);
+  };
+
+  const stopStateSync = () => {
+    if (stateSyncTimer) {
+      clearInterval(stateSyncTimer);
+      stateSyncTimer = null;
+    }
+  };
+
+  const pauseProgressTimer = () => {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  };
+
+  const resumeProgressTimer = () => {
+    if (isPlaying.value && !progressTimer) {
+      startProgressTimer();
+    }
+  };
+
+  const pushPlay = async (song?: Song) => {
     try {
-      const targetTrack = track || currentTrack.value;
-      if (!targetTrack.filePath) {
+      const targetSong = song || currentTrack.value;
+      if (!targetSong.filePath) {
         console.error('passed an error path');
         return;
       }
 
-      await invoke('push_play', { filePath: targetTrack.filePath });
-
-      currentTrack.value.time = await invoke('get_duration');
-      currentTrack.value = targetTrack;
-      currentTrack.value.hasPlaying = true;
-    
-      isPlaying.value = true;
-
-      progress.value = 0; // reset the progress
-      startProgressSync(); // start the progress update
-
+      pauseProgressTimer();
+      await invoke('push_play', { filePath: targetSong.filePath });
+      await syncPlayerState();
       
-      console.log('playing:', targetTrack.title);
+      currentSec.value = 0;
+      progress.value = 0;
+      isPlaying.value = true;
+      startProgressTimer();
+      console.log('playing:', targetSong.name);
     } catch (err) {
       console.error('error when playing:', err);
     }
   };
 
-  // resume/pause
   const togglePlayPause = async () => {
-    if (!currentTrack.value.filePath || !currentTrack.value.hasPlaying) {
+    if (!currentTrack.value.filePath) {
       return pushPlay();
     }
 
     try {
       await invoke('toggle_play');
+      
       isPlaying.value = !isPlaying.value;
       
-      // 暂停时也继续同步进度，播放时继续刷新
-      if (isPlaying.value) startProgressSync();
+      if (isPlaying.value) {
+        resumeProgressTimer();
+      } else {
+        pauseProgressTimer();
+      }
+      
       console.log('已切换播放状态:', isPlaying.value ? '播放中' : '已暂停');
     } catch (err) {
       console.error('切换播放状态失败:', err);
     }
   };
 
-  //  prev song
   const playPrev = async () => {
     try {
+      pauseProgressTimer();
       await invoke('push_prev');
+      await syncPlayerState();
+      currentSec.value = 0;
       progress.value = 0;
-      console.log('previous track triggered');
+      if (isPlaying.value) {
+        startProgressTimer();
+      }
+      console.log('播放上一首');
     } catch (err) {
       console.error('error when play the prev track:', err);
     }
   };
 
-  // next song
   const playNext = async () => {
     try {
+      pauseProgressTimer();
       await invoke('push_next');
+      await syncPlayerState();
+      currentSec.value = 0;
       progress.value = 0;
-      console.log('next track triggered');
+      if (isPlaying.value) {
+        startProgressTimer();
+      }
+      console.log('播放下一首');
     } catch (err) {
       console.error('error when play the next track:', err);
     }
   };
 
-  // set the play mode
   const togglePlayMode = async () => {
     try {
       playMode.value = (playMode.value + 1) % 3;
@@ -273,29 +369,33 @@
     }
   };
 
-  // stop the play
   const stopPlay = async () => {
     try {
       await invoke('push_stop');
       isPlaying.value = false;
       progress.value = 0;
-      stopProgressSync();
+      currentSec.value = 0;
+      stopProgressTimer();
       console.log('stopped');
     } catch (err) {
       console.error('error when stop:', err);
     }
   };
 
-  // seek by click the progress bar
   const handleProgressClick = async (e: MouseEvent) => {
     const bar = e.currentTarget as HTMLElement;
     const rect = bar.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const percent = clickX / rect.width;
-    const targetTime = percent * (currentTrack.value.time || 0);
-    
+    const targetTime = percent * (currentTrack.value.durationSec || 0);
+
+    pauseProgressTimer();
     await seekTo(targetTime);
     progress.value = percent * 100;
+    currentSec.value = Math.floor(targetTime);
+    if (isPlaying.value) {
+      startProgressTimer();
+    }
   };
 
   const seekTo = async (time: number) => {
@@ -307,13 +407,25 @@
     }
   };
 
-  // life time
-  onMounted(() => {
-    startProgressSync();
+  onMounted(async () => {
+    syncPlayerState();
+    startProgressTimer();
+    startStateSync();
+    checkTextOverflow();
+    
+    // 监听播放状态变更事件
+    unlistenStateChange = await listen<PlayerState>('player-state-changed', (event) => {
+      console.log('收到播放状态变更事件:', event.payload);
+      updateStateFromData(event.payload);
+    });
   });
 
   onUnmounted(() => {
-    stopProgressSync();
+    stopProgressTimer();
+    stopStateSync();
+    if (unlistenStateChange) {
+      unlistenStateChange();
+    }
   });
 </script>
 
@@ -386,18 +498,45 @@
   display: flex;
   flex-direction: column;
   line-height: 1.2;
+  max-width: 150px;
+  overflow: hidden;
+}
+
+.title-wrapper,
+.artist-wrapper {
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .title {
   font-size: 15px;
   font-weight: 600;
   color: #222;
+  display: inline-block;
 }
 
 .artist {
   font-size: 12px;
   color: #888;
   margin-top: 2px;
+  display: inline-block;
+}
+
+.title.scrolling {
+  animation: scroll-text 6s ease-in-out infinite alternate;
+}
+
+.artist.scrolling {
+  animation: scroll-text 6s ease-in-out infinite alternate;
+}
+
+@keyframes scroll-text {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(calc(-100% + 150px));
+  }
 }
 
 .vip-tag {

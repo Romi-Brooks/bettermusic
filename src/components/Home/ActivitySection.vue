@@ -1,4 +1,3 @@
-<!-- src/components/home/ActivitySection.vue -->
 <template>
   <section class="activity-section">
     <div class="section-header">
